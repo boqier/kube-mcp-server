@@ -19,3 +19,45 @@ func GetAPIResourcesTool() mcp.Tool {
 		mcp.WithBoolean("includeClusterScoped", mcp.Description("Include cluster scoped resources")),
 	)
 }
+
+func GetResourcesTool() mcp.Tool {
+	return mcp.NewTool(
+		"getResource",
+		mcp.WithDescription("Get a specific resource in the Kubernetes cluster"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to get")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource to get")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+	)
+}
+func ListResourcesTool() mcp.Tool {
+	return mcp.NewTool(
+		"listResources",
+		mcp.WithDescription("List all resources in the Kubernetes cluster of a specific kind"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to list")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resources")),
+		mcp.WithString("labelSelector", mcp.Description("Label selector to filter resources")),
+		mcp.WithString("fieldSelector", mcp.Description("Field selector to filter resources")),
+	)
+}
+
+// CreateOrUpdateResourceJSONTool creates a tool definition for creating/updating resources from JSON manifests
+func CreateOrUpdateResourceJSONTool() mcp.Tool {
+	return mcp.NewTool(
+		"createResourceJSON",
+		mcp.WithDescription("Create a resource in the Kubernetes cluster"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to create")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+		mcp.WithString("manifest", mcp.Required(), mcp.Description("The manifest of the resource to create")),
+	)
+}
+
+// CreateOrUpdateResourceYAMLTool creates a tool definition for creating/updating resources from YAML manifests
+func CreateOrUpdateResourceYAMLTool() mcp.Tool {
+	return mcp.NewTool(
+		"createResourceYAML",
+		mcp.WithDescription("Create or update a resource in the Kubernetes cluster from a YAML manifest. This tool is specifically optimized for YAML input and provides better error handling for YAML parsing issues."),
+		mcp.WithString("kind", mcp.Description("The type of resource to create (optional, will be inferred from YAML manifest if not provided)")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource (overrides namespace in YAML manifest if provided)")),
+		mcp.WithString("yamlManifest", mcp.Required(), mcp.Description("The YAML manifest of the resource to create or update. Must be valid Kubernetes YAML format.")),
+	)
+}

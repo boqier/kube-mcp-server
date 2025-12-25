@@ -20,8 +20,14 @@ func main() {
 		panic(err)
 	}
 	s.AddTool(tools.GetAPIResourcesTool(), handlers.GetAPIResources(client))
+	s.AddTool(tools.GetResourcesTool(), handlers.GetResources(client))
+	s.AddTool(tools.ListResourcesTool(), handlers.ListResources(client))
+	s.AddTool(tools.CreateOrUpdateResourceJSONTool(), handlers.CreateOrUpdateResourceJSON(client))
+	s.AddTool(tools.CreateOrUpdateResourceYAMLTool(), handlers.CreateOrUpdateResourceYAML(client))
+	fmt.Println("server starting")
 	if err := server.ServeStdio(s); err != nil {
-		fmt.Errorf("failed to serve stdio:%w", err)
+		fmt.Printf("failed to serve stdio:%s", err)
 		return
 	}
+
 }
