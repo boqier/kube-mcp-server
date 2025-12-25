@@ -1,23 +1,27 @@
 package main
 
 import (
-	"context"
 	"fmt"
 
+	"github.com/boqier/kube-mcp-server/handlers"
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"github.com/boqier/kube-mcp-server/tools"
+	"github.com/mark3labs/mcp-go/server"
 )
 
 func main() {
+	s := server.NewMCPServer(
+		"MCP K8S SERVER",
+		"0.0.2",
+		server.WithResourceCapabilities(true, true),
+	)
 	client, err := k8s.NewClient("")
 	if err != nil {
 		panic(err)
 	}
-	pods, err := client.Clientset.CoreV1().Pods("").List(context.Background(), metav1.ListOptions{})
-	if err != nil {
-		panic(err)
-	}
-	for _, pod := range pods.Items {
-		fmt.Println(pod.Name)
+	s.AddTool(tools.GetAPIResourcesTool(), handlers.GetAPIResources(client))
+	if err := server.ServeStdio(s); err != nil {
+		fmt.Errorf("failed to serve stdio:%w", err)
+		return
 	}
 }
