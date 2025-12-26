@@ -396,3 +396,20 @@ func (c *Client) CreateOrUpdateResourceYAML(ctx context.Context, namespace, yaml
 
 	return result.UnstructuredContent(), nil
 }
+
+func (c *Client) DeleteResource(ctx context.Context, kind, name, namespace string) error {
+	gvr, err := c.getCachedGVR(kind)
+	if err != nil {
+		return err
+	}
+	var deleteErr error
+	if namespace != "" {
+		deleteErr = c.dynamicClient.Resource(*gvr).Namespace(namespace).Delete(ctx, name, metav1.DeleteOptions{})
+	} else {
+		deleteErr = c.dynamicClient.Resource(*gvr).Delete(ctx, name, metav1.DeleteOptions{})
+	}
+	if deleteErr != nil {
+		return fmt.Errorf("failed to delete resource: %w", deleteErr)
+	}
+	return nil
+}

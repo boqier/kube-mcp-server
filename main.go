@@ -24,6 +24,7 @@ func main() {
 	s.AddTool(tools.ListResourcesTool(), handlers.ListResources(client))
 	s.AddTool(tools.CreateOrUpdateResourceJSONTool(), handlers.CreateOrUpdateResourceJSON(client))
 	s.AddTool(tools.CreateOrUpdateResourceYAMLTool(), handlers.CreateOrUpdateResourceYAML(client))
+	s.AddTool(tools.DeleteResourceTool(), handlers.DeleteResource(client))
 	fmt.Println("server starting")
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Printf("failed to serve stdio:%s", err)

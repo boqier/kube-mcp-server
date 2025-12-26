@@ -121,3 +121,22 @@ func CreateOrUpdateResourceJSON(client *k8s.Client) func(ctx context.Context, re
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }
+
+func DeleteResource(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		namespace := request.GetString("namespace", "default")
+		name, err := request.RequireString("name")
+		if err != nil {
+			return nil, fmt.Errorf("name is require!%w", err)
+		}
+		kind, err := request.RequireString("kind")
+		if err != nil {
+			return nil, fmt.Errorf("kind is require!%w", err)
+		}
+		err = client.DeleteResource(ctx, kind, name, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("delete resource failed:%w", err)
+		}
+		return mcp.NewToolResultText("Rrsource deleted successfully"), nil
+	}
+}
