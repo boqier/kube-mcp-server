@@ -109,3 +109,12 @@ func GetNodeMetricsTools() mcp.Tool {
 		mcp.WithString("podName", mcp.Required(), mcp.Description("The name of the node to get resource usage from")),
 	)
 }
+
+func GetEventsTools() mcp.Tool {
+	return mcp.NewTool(
+		"getEvents",
+		mcp.WithDescription("Get events in the Kubernetes cluster"),
+		mcp.WithString("namespace", mcp.Description("The namespace to get events from")),
+		mcp.WithString("labelSelector", mcp.Description("A label selector to filter events")),
+	)
+}

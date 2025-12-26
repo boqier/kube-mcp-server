@@ -559,3 +559,31 @@ func (c *Client) GetNodeMetrics(ctx context.Context, nodeName string) (map[strin
 	}
 	return metricsResult, nil
 }
+
+func (c *Client) GetEvents(ctx context.Context, namespace, labelSelector string) ([]map[string]interface{}, error) {
+	var eventList *corev1.EventList
+	var err error
+	var options metav1.ListOptions
+	if labelSelector != "" {
+		options.LabelSelector = labelSelector
+	}
+	eventList, err = c.Clientset.CoreV1().Events(namespace).List(ctx, options)
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve events:%w", err)
+	}
+	var events []map[string]interface{}
+	for _, event := range eventList.Items {
+		events = append(events, map[string]interface{}{
+			"name":      event.Name,
+			"namespace": event.Namespace,
+			"reason":    event.Reason,
+			"message":   event.Message,
+			"source":    event.Source.Component,
+			"type":      event.Type,
+			"count":     event.Count,
+			"firstTime": event.FirstTimestamp.Time,
+			"lastTime":  event.LastTimestamp.Time,
+		})
+	}
+	return events, nil
+}

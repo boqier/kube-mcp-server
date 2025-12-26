@@ -232,3 +232,22 @@ func GetNodeMetrics(client *k8s.Client) func(ctx context.Context, request mcp.Ca
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }
+
+func GetEvents(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+
+		namespace := request.GetString("namespace", "")
+		labelSelector := request.GetString("labelSelector", "")
+		events, err := client.GetEvents(ctx, namespace, labelSelector)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get events: %w", err)
+		}
+
+		jsonResponse, err := json.Marshal(events)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize events response: %w", err)
+		}
+
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}
