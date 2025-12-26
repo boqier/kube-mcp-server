@@ -508,3 +508,32 @@ func (c *Client) GetPodsLogs(ctx context.Context, namespace, containerName, podN
 
 	return allLogs.String(), nil
 }
+
+// 获取pod的mertic信息，包括cpu和内存使用率
+// 使用mertci clinet来实现
+// 返回一个map,存储pod的元数据以及mertic
+func (c *Client) GetPodMetrics(ctx context.Context, namespace, podName string) (map[string]interface{}, error) {
+	podMertics, err := c.metricsClient.MetricsV1beta1().PodMetricses(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mertics for pod %s in namespace %s :%w", podName, namespace, err)
+	}
+	//构建map
+	merticRestlt := map[string]interface{}{
+		"podName":    podName,
+		"namespace":  namespace,
+		"timestamp":  podMertics.Timestamp.Time,
+		"window":     podMertics.Window.Duration.String(),
+		"containers": []map[string]interface{}{},
+	}
+	containerMerticsList := []map[string]interface{}{}
+	for _, container := range podMertics.Containers {
+		containerMertics := map[string]interface{}{
+			"name":   container.Name,
+			"cpu":    container.Usage.Cpu(),
+			"memory": container.Usage.Memory(),
+		}
+		containerMerticsList = append(containerMerticsList, containerMertics)
+	}
+	merticRestlt["containers"] = containerMerticsList
+	return merticRestlt, nil
+}

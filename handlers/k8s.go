@@ -190,3 +190,27 @@ func GetPodsLogs(client k8s.Client) func(ctx context.Context, request mcp.CallTo
 		return mcp.NewToolResultText(Logs), err
 	}
 }
+
+func GetPodMetrics(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		namespace, err := request.RequireString("namespace")
+		if err != nil {
+			return nil, fmt.Errorf("namespace is required")
+		}
+		podName, err := request.RequireString("podName")
+		if err != nil {
+			return nil, fmt.Errorf("podName is required!")
+		}
+		metrics, err := client.GetPodMetrics(ctx, namespace, podName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get metrics for pod '%s' in namespace '%s': %w", podName, namespace, err)
+		}
+
+		jsonResponse, err := json.Marshal(metrics)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize metrics response: %w", err)
+		}
+
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}

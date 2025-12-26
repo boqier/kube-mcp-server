@@ -92,3 +92,12 @@ func GetPodsLogsTools() mcp.Tool {
 		mcp.WithNumber("TailLogsLen", mcp.Description("The number of lines in this log")),
 	)
 }
+
+func GetPodMetricsTool() mcp.Tool {
+	return mcp.NewTool(
+		"getPodMetrics",
+		mcp.WithDescription("Get CPU and Memory metrics for a specific pod"),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("The namespace of the pod")),
+		mcp.WithString("podName", mcp.Required(), mcp.Description("The name of the pod")),
+	)
+}
