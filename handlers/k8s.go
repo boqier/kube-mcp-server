@@ -172,3 +172,21 @@ func DescribeResources(client *k8s.Client) func(ctx context.Context, request mcp
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }
+
+func GetPodsLogs(client k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		TailLogsLen := request.GetInt("TailLogsLen", 100)
+		name, err := request.RequireString("Name")
+		if err != nil {
+			return nil, fmt.Errorf("name is require!:%w", err)
+		}
+		namespace := request.GetString("namespace", "default")
+		containerName := request.GetString("containerName", "")
+		Logs, err := client.GetPodsLogs(ctx, namespace, containerName, name, TailLogsLen)
+		if err != nil {
+			return nil, err
+		}
+
+		return mcp.NewToolResultText(Logs), err
+	}
+}

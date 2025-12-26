@@ -33,7 +33,7 @@ func ListResourcesTool() mcp.Tool {
 	return mcp.NewTool(
 		"listResources",
 		mcp.WithDescription("List all resources in the Kubernetes cluster of a specific kind"),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to list")),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to list,like Pod ,Deployment....")),
 		mcp.WithString("namespace", mcp.Description("The namespace of the resources")),
 		mcp.WithString("labelSelector", mcp.Description("Label selector to filter resources")),
 		mcp.WithString("fieldSelector", mcp.Description("Field selector to filter resources")),
@@ -79,5 +79,16 @@ func DescribeResourcesTool() mcp.Tool {
 		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to describe")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource to describe")),
 		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+	)
+}
+
+func GetPodsLogsTools() mcp.Tool {
+	return mcp.NewTool(
+		"getPodsLogs",
+		mcp.WithDescription("Get logs of a specific pod in the Kubernetes cluster"),
+		mcp.WithString("Name", mcp.Required(), mcp.Description("The name of the pod to get logs from")),
+		mcp.WithString("containerName", mcp.Description("The name of the container to get logs from")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("The namespace of the pod")),
+		mcp.WithNumber("TailLogsLen", mcp.Description("The number of lines in this log")),
 	)
 }

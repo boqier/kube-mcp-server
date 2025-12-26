@@ -1,10 +1,13 @@
 package k8s
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 	"sync"
 
 	corev1 "k8s.io/api/core/v1"
@@ -429,4 +432,79 @@ func (c *Client) DescribeResource(ctx context.Context, kind, name, namespace str
 	}
 
 	return obj.UnstructuredContent(), nil
+}
+
+// 使用clientset客户端获取日志，传入命名空间，pod名，容器名，以及行数参数
+// 返回日志字符串
+// 后面会加上从loki获取日志，支持更复杂的日志过滤策略
+func (c *Client) GetPodsLogs(ctx context.Context, namespace, containerName, podName string, LogstailLines int) (string, error) {
+	if LogstailLines > 300 {
+		LogstailLines = 300
+	}
+	tailLines := int64(LogstailLines)
+	podLogOptions := &corev1.PodLogOptions{
+		TailLines: &tailLines,
+	}
+	//如果制定了container的name
+	if containerName != "" {
+		podLogOptions.Container = containerName
+		req := c.Clientset.CoreV1().Pods(namespace).GetLogs(podName, podLogOptions)
+		logs, err := req.Stream(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to get logs for container %s:%w", containerName, err)
+		}
+		defer logs.Close()
+		buf := new(bytes.Buffer)
+		if _, err := io.Copy(buf, logs); err != nil {
+			return "", fmt.Errorf("failed to copy logs to buffer:%w", err)
+		}
+		return buf.String(), nil
+	}
+
+	//如果没有传递conmtainer name的话：
+	pod, err := c.Clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to get pod details%w", err)
+	}
+	//如果只有一个container的话
+	if len(pod.Spec.Containers) == 1 {
+		req := c.Clientset.CoreV1().Pods(namespace).GetLogs(podName, podLogOptions)
+		logs, err := req.Stream(ctx)
+		if err != nil {
+			return "", fmt.Errorf("failed to get logs: %w", err)
+		}
+		defer logs.Close()
+
+		buf := new(bytes.Buffer)
+		if _, err := io.Copy(buf, logs); err != nil {
+			return "", fmt.Errorf("failed to read logs: %w", err)
+		}
+		return buf.String(), nil
+	}
+	//如果有多个容器的话：
+	var allLogs strings.Builder
+	for _, container := range pod.Spec.Containers {
+		containerLogOptions := podLogOptions.DeepCopy()
+		containerLogOptions.Container = container.Name
+
+		req := c.Clientset.CoreV1().Pods(namespace).GetLogs(podName, containerLogOptions)
+		logs, err := req.Stream(ctx)
+		if err != nil {
+			allLogs.WriteString(fmt.Sprintf("\n--- Error getting logs for container %s: %v ---\n", container.Name, err))
+			continue
+		}
+
+		allLogs.WriteString(fmt.Sprintf("\n--- Logs for container %s ---\n", container.Name))
+		buf := new(bytes.Buffer)
+		_, err = io.Copy(buf, logs)
+		logs.Close()
+
+		if err != nil {
+			allLogs.WriteString(fmt.Sprintf("Error reading logs: %v\n", err))
+		} else {
+			allLogs.WriteString(buf.String())
+		}
+	}
+
+	return allLogs.String(), nil
 }
