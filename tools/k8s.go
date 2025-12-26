@@ -71,3 +71,13 @@ func DeleteResourceTool() mcp.Tool {
 		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
 	)
 }
+
+func DescribeResourcesTool() mcp.Tool {
+	return mcp.NewTool(
+		"describeResource",
+		mcp.WithDescription("Describe a resource in the Kubernetes cluster based on given kind and name"),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to describe")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource to describe")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+	)
+}

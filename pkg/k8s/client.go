@@ -413,3 +413,20 @@ func (c *Client) DeleteResource(ctx context.Context, kind, name, namespace strin
 	}
 	return nil
 }
+
+// 使用dynamic client来获取资源的describe，传入kind,name,namespace参数
+// 返回资源的unstructured content通过map[string]interface{}返回
+// 其实和getresource一样
+func (c *Client) DescribeResource(ctx context.Context, kind, name, namespace string) (map[string]interface{}, error) {
+	gvr, err := c.getCachedGVR(kind)
+	if err != nil {
+		return nil, err
+	}
+	var obj *unstructured.Unstructured
+	obj, err = c.dynamicClient.Resource(*gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve resource: %w", err)
+	}
+
+	return obj.UnstructuredContent(), nil
+}

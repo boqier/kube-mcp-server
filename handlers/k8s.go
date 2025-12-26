@@ -140,3 +140,35 @@ func DeleteResource(client *k8s.Client) func(ctx context.Context, request mcp.Ca
 		return mcp.NewToolResultText("Rrsource deleted successfully"), nil
 	}
 }
+
+func DescribeResources(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+
+		kind, err := request.RequireString("kind")
+		if err != nil {
+			return nil, err
+		}
+
+		name, err := request.RequireString("name")
+		if err != nil {
+			return nil, err
+		}
+
+		namespace := request.GetString("namespace", "default")
+
+		// Fetch resource description
+		resourceDescription, err := client.DescribeResource(ctx, kind, name, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe resource '%s' of kind '%s': %w", name, kind, err)
+		}
+
+		// Serialize response to JSON
+		jsonResponse, err := json.Marshal(resourceDescription)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize response: %w", err)
+		}
+
+		// Return JSON response using NewToolResultText
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}
