@@ -124,7 +124,7 @@ func CreateOrUpdateResourceJSON(client *k8s.Client) func(ctx context.Context, re
 
 func DeleteResource(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		namespace := request.GetString("namespace", "default")
+		namespace := request.GetString("namespace", "")
 		name, err := request.RequireString("name")
 		if err != nil {
 			return nil, fmt.Errorf("name is require!%w", err)
@@ -154,7 +154,7 @@ func DescribeResources(client *k8s.Client) func(ctx context.Context, request mcp
 			return nil, err
 		}
 
-		namespace := request.GetString("namespace", "default")
+		namespace := request.GetString("namespace", "")
 
 		// Fetch resource description
 		resourceDescription, err := client.DescribeResource(ctx, kind, name, namespace)
@@ -211,6 +211,24 @@ func GetPodMetrics(client *k8s.Client) func(ctx context.Context, request mcp.Cal
 			return nil, fmt.Errorf("failed to serialize metrics response: %w", err)
 		}
 
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}
+
+func GetNodeMetrics(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		nodeName, err := request.RequireString("podName")
+		if err != nil {
+			return nil, fmt.Errorf("nodeName is required:%w", &err)
+		}
+		result, err := client.GetNodeMetrics(ctx, nodeName)
+		if err != nil {
+			return nil, err
+		}
+		jsonResponse, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize response:%w", err)
+		}
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }

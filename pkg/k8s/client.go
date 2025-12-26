@@ -426,9 +426,13 @@ func (c *Client) DescribeResource(ctx context.Context, kind, name, namespace str
 		return nil, err
 	}
 	var obj *unstructured.Unstructured
-	obj, err = c.dynamicClient.Resource(*gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve resource: %w", err)
+	if namespace == "" {
+		obj, err = c.dynamicClient.Resource(*gvr).Get(ctx, name, metav1.GetOptions{})
+	} else {
+		obj, err = c.dynamicClient.Resource(*gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return nil, fmt.Errorf("failed to retrieve resource: %w", err)
+		}
 	}
 
 	return obj.UnstructuredContent(), nil
@@ -536,4 +540,22 @@ func (c *Client) GetPodMetrics(ctx context.Context, namespace, podName string) (
 	}
 	merticRestlt["containers"] = containerMerticsList
 	return merticRestlt, nil
+}
+
+// 获取node节点的资源使用情况
+func (c *Client) GetNodeMetrics(ctx context.Context, nodeName string) (map[string]interface{}, error) {
+	nodeMetrics, err := c.metricsClient.MetricsV1beta1().NodeMetricses().Get(ctx, nodeName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get mertics for node %s:%w", nodeName, err)
+	}
+	metricsResult := map[string]interface{}{
+		"nodeName":  nodeName,
+		"timestamp": nodeMetrics.Timestamp.Time,
+		"window":    nodeMetrics.Window.Duration.String(),
+		"usage": map[string]string{
+			"cpu":    nodeMetrics.Usage.Cpu().String(),
+			"memory": nodeMetrics.Usage.Memory().String(),
+		},
+	}
+	return metricsResult, nil
 }

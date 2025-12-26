@@ -28,6 +28,7 @@ func main() {
 	s.AddTool(tools.DescribeResourcesTool(), handlers.DescribeResources(client))
 	s.AddTool(tools.GetPodsLogsTools(), handlers.GetPodsLogs(*client))
 	s.AddTool(tools.GetPodMetricsTool(), handlers.GetPodMetrics(client))
+	s.AddTool(tools.GetNodeMetricsTools(), handlers.GetNodeMetrics(client))
 	fmt.Println("server starting")
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Printf("failed to serve stdio:%s", err)

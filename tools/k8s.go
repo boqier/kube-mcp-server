@@ -101,3 +101,11 @@ func GetPodMetricsTool() mcp.Tool {
 		mcp.WithString("podName", mcp.Required(), mcp.Description("The name of the pod")),
 	)
 }
+
+func GetNodeMetricsTools() mcp.Tool {
+	return mcp.NewTool(
+		"getNodeMetrics",
+		mcp.WithDescription("Get resource usage of a specific node in the Kubernetes cluster"),
+		mcp.WithString("podName", mcp.Required(), mcp.Description("The name of the node to get resource usage from")),
+	)
+}
