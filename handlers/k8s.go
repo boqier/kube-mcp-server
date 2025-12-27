@@ -269,3 +269,31 @@ func GetIngresses(client *k8s.Client) func(ctx context.Context, request mcp.Call
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }
+
+func RolloutRestart(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		kind, err := request.RequireString("kind")
+		if err != nil {
+			return nil, fmt.Errorf("required kind")
+		}
+		name, err := request.RequireString("name")
+		if err != nil {
+			return nil, fmt.Errorf("required name")
+		}
+		namespace, err := request.RequireString("name")
+		if err != nil {
+			return nil, fmt.Errorf("required namespace")
+		}
+		result, err := client.RolloutRestart(ctx, kind, name, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("failed to rollout restart resource: %w", err)
+		}
+
+		jsonResponse, err := json.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize response: %w", err)
+		}
+
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}

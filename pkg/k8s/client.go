@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -663,4 +664,29 @@ func (c *Client) GetIngresses(ctx context.Context, host string) ([]map[string]in
 		}
 	}
 	return ingressList, nil
+}
+
+// 滚动更新pod实现，可以更新 Deployment、DomonSet以及Statefulset ...
+// 通过给它打一个annotation加上当前的时间戳来实现滚动更新
+func (c *Client) RolloutRestart(ctx context.Context, kind, name, namespace string) (map[string]interface{}, error) {
+	gvr, err := c.getCachedGVR(kind)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get gvr for kind %s :%w", kind, err)
+	}
+	resource := c.dynamicClient.Resource(*gvr).Namespace(namespace)
+	patch := []byte(fmt.Sprintf(
+		`{"spec":{"template":{"metadata":{"annotations":{"kubectl.kubernetes.io/restartedAt":"%s"}}}}}`,
+		time.Now().Format(time.RFC3339),
+	))
+	result, err := resource.Patch(ctx, name, types.StrategicMergePatchType, patch, metav1.PatchOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to rollout %s %s %s :%w", kind, namespace, name, err)
+	}
+	//获取新的资源
+	content := result.UnstructuredContent()
+	spec, found, _ := unstructured.NestedMap(content, "spec", "template")
+	if !found || spec == nil {
+		return nil, fmt.Errorf("resource kind %s does not support rollout restart ", kind)
+	}
+	return content, nil
 }

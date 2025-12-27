@@ -5,6 +5,7 @@ import (
 
 	"github.com/boqier/kube-mcp-server/handlers"
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
+	"github.com/boqier/kube-mcp-server/prompts"
 	"github.com/boqier/kube-mcp-server/tools"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -31,7 +32,8 @@ func main() {
 	s.AddTool(tools.GetNodeMetricsTools(), handlers.GetNodeMetrics(client))
 	s.AddTool(tools.GetEventsTools(), handlers.GetEvents(client))
 	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
-
+	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
+	s.AddTool(tools.RolloutRestartTool(), handlers.RolloutRestart(client))
 	fmt.Println("server starting")
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Printf("failed to serve stdio:%s", err)

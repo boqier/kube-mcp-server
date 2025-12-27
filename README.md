@@ -1,2 +1,6 @@
 # kube-mcp-server
 learn let llm use mcp to manage k8s cluster
+//问题：
+1. 参数传递错误问题，经常会穿小写？
+2.命名空间问题，默认问题？如果是无命名空间的资源就不能默认是default
+3.模型问题，对模型有一定的要求

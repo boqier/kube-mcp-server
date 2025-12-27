@@ -23,18 +23,18 @@ func GetAPIResourcesTool() mcp.Tool {
 func GetResourcesTool() mcp.Tool {
 	return mcp.NewTool(
 		"getResource",
-		mcp.WithDescription("Get a specific resource in the Kubernetes cluster"),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to get")),
+		mcp.WithDescription("Get a specific resource in the Kubernetes cluster，make sure use like Pod,Deployment,Service..."),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to get,make sure use like Pod,Deployment,Service...")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource to get")),
-		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource,if in default namespace,use default")),
 	)
 }
 func ListResourcesTool() mcp.Tool {
 	return mcp.NewTool(
 		"listResources",
 		mcp.WithDescription("List all resources in the Kubernetes cluster of a specific kind"),
-		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to list,like Pod ,Deployment....")),
-		mcp.WithString("namespace", mcp.Description("The namespace of the resources")),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to list,make sure use like Pod ,Deployment....")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resources,if in default namespace,use default")),
 		mcp.WithString("labelSelector", mcp.Description("Label selector to filter resources")),
 		mcp.WithString("fieldSelector", mcp.Description("Field selector to filter resources")),
 	)
@@ -78,7 +78,7 @@ func DescribeResourcesTool() mcp.Tool {
 		mcp.WithDescription("Describe a resource in the Kubernetes cluster based on given kind and name"),
 		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to describe")),
 		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource to describe")),
-		mcp.WithString("namespace", mcp.Description("The namespace of the resource")),
+		mcp.WithString("namespace", mcp.Description("The namespace of the resource,if in default namespace,use default")),
 	)
 }
 
@@ -124,5 +124,16 @@ func GetIngressesTool() mcp.Tool {
 		"getIngresses",
 		mcp.WithDescription("Get ingresses in the Kubernetes cluster"),
 		mcp.WithString("host", mcp.Required(), mcp.Description("The host to get ingresses from")),
+	)
+}
+
+// RolloutRestartTool creates a tool for restarting workloads with pod templates.
+func RolloutRestartTool() mcp.Tool {
+	return mcp.NewTool(
+		"rolloutRestart",
+		mcp.WithDescription("Perform a rollout restart on a Deployment, DaemonSet, StatefulSet, ReplicaSet, or any resource with spec.template."),
+		mcp.WithString("kind", mcp.Required(), mcp.Description("The type of resource to restart (e.g., Deployment, DaemonSet)")),
+		mcp.WithString("name", mcp.Required(), mcp.Description("The name of the resource")),
+		mcp.WithString("namespace", mcp.Required(), mcp.Description("The namespace of the resource")),
 	)
 }
