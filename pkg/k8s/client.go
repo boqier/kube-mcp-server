@@ -587,3 +587,80 @@ func (c *Client) GetEvents(ctx context.Context, namespace, labelSelector string)
 	}
 	return events, nil
 }
+
+//通过host列出对应的ingress，如果没有传，则列出所有
+//返回结果类似:
+/*
+		{
+	  "name": "my-ingress",
+	  "namespace": "default",
+	  "paths": [
+	    {
+	      "host": "example.com",
+	      "path": "/api",
+	      "serviceName": "api-service",
+	      "portName": "http",
+	      "portNum": 80
+	    },
+	    {
+	      "host": "example.com",
+	      "path": "/admin",
+	      "serviceName": "admin-service",
+	      "portName": "",
+	      "portNum": 8080
+	    }
+	  ]
+	}
+*/
+func (c *Client) GetIngresses(ctx context.Context, host string) ([]map[string]interface{}, error) {
+	//ingresspath对应后端资源的结构体
+	type IngressPathInfo struct {
+		Host        string `json:"host"`
+		Path        string `json:"path"`
+		ServiceName string `json:"serviceName"`
+		PortName    string `json:"portName"`
+		PortNum     int32  `json:"portNum"`
+	}
+	//列出集群中所有的ingress
+	ingresses, err := c.Clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to retrieve ingresses:%w", err)
+	}
+
+	var ingressList []map[string]interface{}
+	for _, ingress := range ingresses.Items {
+		hasMatchingHost := false
+		var pathInfos []IngressPathInfo
+		for _, rule := range ingress.Spec.Rules {
+			//没有匹配到对应的ingress，继续找
+			if host != "" && rule.Host != host {
+				continue
+			}
+			// 如果匹配到了，或者说要列出所有的：
+			if host == "" || rule.Host == host {
+				hasMatchingHost = true
+				if rule.HTTP != nil {
+					for _, path := range rule.HTTP.Paths {
+						if path.Backend.Service != nil {
+							pathInfos = append(pathInfos, IngressPathInfo{
+								Host:        rule.Host,
+								Path:        path.Path,
+								ServiceName: path.Backend.Service.Name,
+								PortName:    path.Backend.Service.Port.Name,
+								PortNum:     path.Backend.Service.Port.Number,
+							})
+						}
+					}
+				}
+			}
+		}
+		if hasMatchingHost {
+			ingressList = append(ingressList, map[string]interface{}{
+				"name":            ingress.Name,
+				"namespace":       ingress.Namespace,
+				"IngressPathInfo": pathInfos,
+			})
+		}
+	}
+	return ingressList, nil
+}

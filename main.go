@@ -12,7 +12,7 @@ import (
 func main() {
 	s := server.NewMCPServer(
 		"MCP K8S SERVER",
-		"0.0.8",
+		"0.1.0",
 		server.WithResourceCapabilities(true, true),
 	)
 	client, err := k8s.NewClient("")
@@ -30,6 +30,8 @@ func main() {
 	s.AddTool(tools.GetPodMetricsTool(), handlers.GetPodMetrics(client))
 	s.AddTool(tools.GetNodeMetricsTools(), handlers.GetNodeMetrics(client))
 	s.AddTool(tools.GetEventsTools(), handlers.GetEvents(client))
+	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
+
 	fmt.Println("server starting")
 	if err := server.ServeStdio(s); err != nil {
 		fmt.Printf("failed to serve stdio:%s", err)

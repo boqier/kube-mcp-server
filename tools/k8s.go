@@ -118,3 +118,11 @@ func GetEventsTools() mcp.Tool {
 		mcp.WithString("labelSelector", mcp.Description("A label selector to filter events")),
 	)
 }
+
+func GetIngressesTool() mcp.Tool {
+	return mcp.NewTool(
+		"getIngresses",
+		mcp.WithDescription("Get ingresses in the Kubernetes cluster"),
+		mcp.WithString("host", mcp.Required(), mcp.Description("The host to get ingresses from")),
+	)
+}

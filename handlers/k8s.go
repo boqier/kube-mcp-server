@@ -251,3 +251,21 @@ func GetEvents(client *k8s.Client) func(ctx context.Context, request mcp.CallToo
 		return mcp.NewToolResultText(string(jsonResponse)), nil
 	}
 }
+
+func GetIngresses(client *k8s.Client) func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		host := request.GetString("host", "")
+
+		ingresses, err := client.GetIngresses(ctx, host)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get ingress resources: %w", err)
+		}
+
+		jsonResponse, err := json.Marshal(ingresses)
+		if err != nil {
+			return nil, fmt.Errorf("failed to serialize response: %w", err)
+		}
+
+		return mcp.NewToolResultText(string(jsonResponse)), nil
+	}
+}
