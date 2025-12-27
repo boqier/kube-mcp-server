@@ -7,6 +7,7 @@ import (
 
 	"github.com/boqier/kube-mcp-server/handlers"
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
+	"github.com/boqier/kube-mcp-server/pkg/prometheus"
 	"github.com/boqier/kube-mcp-server/prompts"
 	"github.com/boqier/kube-mcp-server/tools"
 	"github.com/mark3labs/mcp-go/server"
@@ -28,6 +29,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	promClient, err := prometheus.New(getEnvOrDefault("PROMETHEUS_URL", "http://prometheus:9090"))
+	if err != nil {
+		panic(err)
+	}
 	var mode string
 	var safeMod bool
 	var port string
@@ -43,6 +48,8 @@ func main() {
 	s.AddTool(tools.GetNodeMetricsTools(), handlers.GetNodeMetrics(client))
 	s.AddTool(tools.GetEventsTools(), handlers.GetEvents(client))
 	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
+	s.AddTool(tools.GetMetricNamesTool(), handlers.GetMetricNames(promClient))
+	s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
 	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
 
 	if !safeMod {
