@@ -9,6 +9,7 @@ import (
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
 	"github.com/boqier/kube-mcp-server/pkg/prometheus"
 	"github.com/boqier/kube-mcp-server/prompts"
+	"github.com/boqier/kube-mcp-server/resources"
 	"github.com/boqier/kube-mcp-server/tools"
 	"github.com/mark3labs/mcp-go/server"
 )
@@ -18,6 +19,9 @@ func getEnvOrDefault(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
+}
+func addResources(s *server.MCPServer) {
+	s.AddResource(resources.ManagerResource(), handlers.GetManager)
 }
 func main() {
 	s := server.NewMCPServer(
@@ -60,6 +64,7 @@ func main() {
 		s.AddTool(tools.CreateOrUpdateResourceJSONTool(), handlers.CreateOrUpdateResourceJSON(client))
 		s.AddTool(tools.CreateOrUpdateResourceYAMLTool(), handlers.CreateOrUpdateResourceYAML(client))
 	}
+	addResources(s)
 	fmt.Println("server starting")
 	switch mode {
 	case "stdio":
