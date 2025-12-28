@@ -141,3 +141,33 @@ func (c *Client) GetMetricNames(ctx context.Context) ([]string, error) {
 	}
 	return names, nil
 }
+
+func (c *Client) GetAlerts(ctx context.Context) (map[string]interface{}, error) {
+	if c == nil || c.api == nil {
+		return nil, fmt.Errorf("prometheus client not initialized")
+	}
+	result, err := c.api.Alerts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get alerts: %w", err)
+	}
+	alerts := []map[string]interface{}{}
+	for _, alert := range result.Alerts {
+		alerts = append(alerts, map[string]interface{}{
+			"status":      alert.State,
+			"labels":      labelSetToMap(alert.Labels),
+			"annotations": labelSetToMap(alert.Annotations),
+			"startsAt":    alert.ActiveAt,
+		})
+	}
+	return map[string]interface{}{
+		"alerts": alerts,
+	}, nil
+}
+
+func labelSetToMap(ls model.LabelSet) map[string]string {
+	out := make(map[string]string)
+	for k, v := range ls {
+		out[string(k)] = string(v)
+	}
+	return out
+}

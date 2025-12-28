@@ -29,7 +29,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	promClient, err := prometheus.New(getEnvOrDefault("PROMETHEUS_URL", "http://prometheus:9090"))
+	promClient, err := prometheus.New(getEnvOrDefault("PROMETHEUS_URL", "http://127.0.0.1:9090"))
 	if err != nil {
 		panic(err)
 	}
@@ -50,6 +50,8 @@ func main() {
 	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
 	s.AddTool(tools.GetMetricNamesTool(), handlers.GetMetricNames(promClient))
 	s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
+	s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
+	s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
 	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
 
 	if !safeMod {
