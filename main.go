@@ -34,20 +34,49 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	promClient, err := prometheus.New(getEnvOrDefault("PROMETHEUS_URL", "http://127.0.0.1:9090"))
-	if err != nil {
-		panic(err)
-	}
-	lokiClient, err := loki.New(getEnvOrDefault("LOKI_URL", "http://127.0.0.1:3100"))
-	if err != nil {
-		panic(err)
-	}
+	var promClient *prometheus.Client
+	var lokiClient *loki.Client
+	var promErr error
+	var lokiErr error
 	var mode string
 	var safeMod bool
 	var port string
+	var enablePrometheus bool
+	var enableLoki bool
+	var prometheusURL string
+	var lokiURL string
+	if enablePrometheus {
+		promClient, promErr = prometheus.New(prometheusURL)
+		if promErr != nil {
+			fmt.Printf("Warning: Failed to initialize Prometheus client: %v\n", promErr)
+			fmt.Println("Prometheus features will be disabled")
+		} else {
+			fmt.Printf("Prometheus integration enabled: %s\n", prometheusURL)
+		}
+	} else {
+		fmt.Println("Prometheus integration disabled")
+	}
+
+	if enableLoki {
+		lokiClient, lokiErr = loki.New(lokiURL)
+		if lokiErr != nil {
+			fmt.Printf("Warning: Failed to initialize Loki client: %v\n", lokiErr)
+			fmt.Println("Loki features will be disabled")
+		} else {
+			fmt.Printf("Loki integration enabled: %s\n", lokiURL)
+		}
+	} else {
+		fmt.Println("Loki integration disabled")
+	}
+
 	flag.StringVar(&port, "port", getEnvOrDefault("SERVER_PORT", "8080"), "Server port")
 	flag.StringVar(&mode, "mode", getEnvOrDefault("SERVER_MODE", "stdio"), "Server mode: 'stdio', 'sse', or 'streamable-http'")
 	flag.BoolVar(&safeMod, "safe-mode", false, "Enable safe mode (disables write operations)")
+	flag.BoolVar(&enablePrometheus, "enable-prometheus", true, "Enable Prometheus integration (default: true)")
+	flag.BoolVar(&enableLoki, "enable-loki", true, "Enable Loki integration (default: true)")
+	flag.StringVar(&prometheusURL, "prometheus-url", getEnvOrDefault("PROMETHEUS_URL", "http://127.0.0.1:9090"), "Prometheus server URL")
+	flag.StringVar(&lokiURL, "loki-url", getEnvOrDefault("LOKI_URL", "http://127.0.0.1:3100"), "Loki server URL")
+	flag.Parse()
 	s.AddTool(tools.GetAPIResourcesTool(), handlers.GetAPIResources(client))
 	s.AddTool(tools.GetResourcesTool(), handlers.GetResources(client))
 	s.AddTool(tools.ListResourcesTool(), handlers.ListResources(client))
@@ -57,15 +86,21 @@ func main() {
 	s.AddTool(tools.GetNodeMetricsTools(), handlers.GetNodeMetrics(client))
 	s.AddTool(tools.GetEventsTools(), handlers.GetEvents(client))
 	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
-	s.AddTool(tools.GetMetricNamesTool(), handlers.GetMetricNames(promClient))
-	s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
-	s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
-	s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
-	s.AddTool(tools.QueryLogsInstantTool(), handlers.QueryLogsInstant(lokiClient))
-	s.AddTool(tools.QueryLogsRangeTool(), handlers.QueryLogsRange(lokiClient))
-	s.AddTool(tools.GetLogLabelsTool(), handlers.GetLogLabels(lokiClient))
-	s.AddTool(tools.GetLogLabelValuesTool(), handlers.GetLogLabelValues(lokiClient))
-	s.AddTool(tools.GetLogStreamsTool(), handlers.GetLogStreams(lokiClient))
+
+	if promClient != nil {
+		s.AddTool(tools.GetMetricNamesTool(), handlers.GetMetricNames(promClient))
+		s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
+		s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
+		s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
+	}
+
+	if lokiClient != nil {
+		s.AddTool(tools.QueryLogsInstantTool(), handlers.QueryLogsInstant(lokiClient))
+		s.AddTool(tools.QueryLogsRangeTool(), handlers.QueryLogsRange(lokiClient))
+		s.AddTool(tools.GetLogLabelsTool(), handlers.GetLogLabels(lokiClient))
+		s.AddTool(tools.GetLogLabelValuesTool(), handlers.GetLogLabelValues(lokiClient))
+		s.AddTool(tools.GetLogStreamsTool(), handlers.GetLogStreams(lokiClient))
+	}
 	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
 	s.AddTool(tools.SendToFeishuTool(), handlers.SendToFeishuHandler())
 
