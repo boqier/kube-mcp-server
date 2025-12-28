@@ -26,7 +26,7 @@ func addResources(s *server.MCPServer) {
 func main() {
 	s := server.NewMCPServer(
 		"MCP K8S SERVER",
-		"0.2.0",
+		"0.3.0",
 		server.WithResourceCapabilities(true, true),
 	)
 	client, err := k8s.NewClient("")
@@ -57,6 +57,7 @@ func main() {
 	s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
 	s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
 	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
+	s.AddTool(tools.SendToFeishuTool(), handlers.SendToFeishuHandler())
 
 	if !safeMod {
 		s.AddTool(tools.RolloutRestartTool(), handlers.RolloutRestart(client))

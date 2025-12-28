@@ -6,7 +6,7 @@ func ManagerResource() mcp.Resource {
 	return mcp.NewResource(
 		"docs://manager",
 		"Cluster Manager",
-		mcp.WithResourceDescription("List of administrators and management information of the k8s cluster"),
+		mcp.WithResourceDescription("List of administrators and management information of the k8s cluster,and the managers feishu webhook url"),
 		mcp.WithMIMEType("text/markdown"),
 	)
 }
