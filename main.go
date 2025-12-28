@@ -7,6 +7,7 @@ import (
 
 	"github.com/boqier/kube-mcp-server/handlers"
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
+	"github.com/boqier/kube-mcp-server/pkg/loki"
 	"github.com/boqier/kube-mcp-server/pkg/prometheus"
 	"github.com/boqier/kube-mcp-server/prompts"
 	"github.com/boqier/kube-mcp-server/resources"
@@ -37,6 +38,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	lokiClient, err := loki.New(getEnvOrDefault("LOKI_URL", "http://127.0.0.1:3100"))
+	if err != nil {
+		panic(err)
+	}
 	var mode string
 	var safeMod bool
 	var port string
@@ -56,6 +61,11 @@ func main() {
 	s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
 	s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
 	s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
+	s.AddTool(tools.QueryLogsInstantTool(), handlers.QueryLogsInstant(lokiClient))
+	s.AddTool(tools.QueryLogsRangeTool(), handlers.QueryLogsRange(lokiClient))
+	s.AddTool(tools.GetLogLabelsTool(), handlers.GetLogLabels(lokiClient))
+	s.AddTool(tools.GetLogLabelValuesTool(), handlers.GetLogLabelValues(lokiClient))
+	s.AddTool(tools.GetLogStreamsTool(), handlers.GetLogStreams(lokiClient))
 	s.AddPrompt(prompts.UseKindPrompt(), handlers.UseKindPrompt())
 	s.AddTool(tools.SendToFeishuTool(), handlers.SendToFeishuHandler())
 
