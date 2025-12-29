@@ -53,6 +53,55 @@ type Client struct {
 	cacheLock              sync.RWMutex
 }
 
+// event 事件处理
+var noiseReasons = map[string]struct{}{
+	"SuccessfulCreate": {},
+	"SuccessfulDelete": {},
+}
+
+// 辅助：如果传入空字符串返回 nil，方便 JSON 序列化为 null
+func nilIfEmpty(s string) interface{} {
+	if s == "" {
+		return nil
+	}
+	return s
+}
+func normalizeEventTimestamp(e *corev1.Event) (ts string, source string) {
+	// 优先使用 EventTime
+	if !e.EventTime.Time.IsZero() {
+		return e.EventTime.Time.UTC().Format(time.RFC3339Nano), "eventTime"
+	}
+	// 然后 lastTimestamp
+	if !e.LastTimestamp.Time.IsZero() {
+		return e.LastTimestamp.Time.UTC().Format(time.RFC3339Nano), "lastTimestamp"
+	}
+	// 然后 firstTimestamp
+	if !e.FirstTimestamp.Time.IsZero() {
+		return e.FirstTimestamp.Time.UTC().Format(time.RFC3339Nano), "firstTimestamp"
+	}
+	return "", "none"
+}
+
+func isNoiseEvent(e *corev1.Event, ts string) bool {
+	// 如果有时间则不是噪声
+	if ts != "" {
+		return false
+	}
+	// 如果有 message 则不是噪声
+	if strings.TrimSpace(e.Message) != "" {
+		return false
+	}
+	// count > 1 表示有多次发生，可能有价值
+	if e.Count > 1 {
+		return false
+	}
+	// reason 属于常见成功类且无其他信息 -> 视为噪声
+	if _, ok := noiseReasons[e.Reason]; ok {
+		return true
+	}
+	return false
+}
+
 // 构建客户端的 rest config,使用不同的方式：按次序分为：
 // - 从KUBECONFIG_DATA环境变量中加载
 // - 从service account token中加载:KUBERNETES_SERVER和KUBERNETES_TOKEN
@@ -721,43 +770,6 @@ func (c *Client) GetNodeMetrics(ctx context.Context, nodeName string) (map[strin
 }
 
 func (c *Client) GetEvents(ctx context.Context, namespace, labelSelector string) ([]map[string]interface{}, error) {
-	// 首先尝试从本地缓存获取
-	c.informerLock.RLock()
-	if eventCache, exists := c.resourceCaches["Event"]; exists {
-		items := eventCache.List()
-		var events []map[string]interface{}
-		for _, item := range items {
-			if event, ok := item.(*corev1.Event); ok {
-				// 检查命名空间
-				if namespace != "" && event.Namespace != namespace {
-					continue
-				}
-				// 检查标签选择器（简化实现）
-				if labelSelector != "" {
-					// 复杂的标签选择器仍需要调用API Server
-					c.informerLock.RUnlock()
-					goto callAPIServer
-				}
-				events = append(events, map[string]interface{}{
-					"name":      event.Name,
-					"namespace": event.Namespace,
-					"reason":    event.Reason,
-					"message":   event.Message,
-					"source":    event.Source.Component,
-					"type":      event.Type,
-					"count":     event.Count,
-					"firstTime": event.FirstTimestamp.Time,
-					"lastTime":  event.LastTimestamp.Time,
-				})
-			}
-		}
-		c.informerLock.RUnlock()
-		return events, nil
-	}
-	c.informerLock.RUnlock()
-
-callAPIServer:
-	// 缓存未命中或有复杂选择器，调用API Server
 	var eventList *corev1.EventList
 	var err error
 	var options metav1.ListOptions
