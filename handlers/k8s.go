@@ -280,7 +280,7 @@ func RolloutRestart(client *k8s.Client) func(ctx context.Context, request mcp.Ca
 		if err != nil {
 			return nil, fmt.Errorf("required name")
 		}
-		namespace, err := request.RequireString("name")
+		namespace, err := request.RequireString("namespace")
 		if err != nil {
 			return nil, fmt.Errorf("required namespace")
 		}

@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/boqier/kube-mcp-server/handlers"
 	"github.com/boqier/kube-mcp-server/pkg/k8s"
@@ -25,6 +28,19 @@ func addResources(s *server.MCPServer) {
 	s.AddResource(resources.ManagerResource(), handlers.GetManager)
 }
 func main() {
+	// 创建上下文，用于管理Informer生命周期
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 处理信号，确保优雅关闭
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	go func() {
+		<-sigCh
+		fmt.Println("Received shutdown signal, shutting down...")
+		cancel()
+	}()
+
 	s := server.NewMCPServer(
 		"MCP K8S SERVER",
 		"0.3.0",
@@ -45,6 +61,16 @@ func main() {
 	var enableLoki bool
 	var prometheusURL string
 	var lokiURL string
+
+	flag.StringVar(&port, "port", getEnvOrDefault("SERVER_PORT", "8080"), "Server port")
+	flag.StringVar(&mode, "mode", getEnvOrDefault("SERVER_MODE", "stdio"), "Server mode: 'stdio', 'sse', or 'streamable-http'")
+	flag.BoolVar(&safeMod, "safe-mode", false, "Enable safe mode (disables write operations)")
+	flag.BoolVar(&enablePrometheus, "enable-prometheus", false, "Enable Prometheus integration (default: false)")
+	flag.BoolVar(&enableLoki, "enable-loki", false, "Enable Loki integration (default: false)")
+	flag.StringVar(&prometheusURL, "prometheus-url", getEnvOrDefault("PROMETHEUS_URL", "http://127.0.0.1:9090"), "Prometheus server URL")
+	flag.StringVar(&lokiURL, "loki-url", getEnvOrDefault("LOKI_URL", "http://127.0.0.1:3100"), "Loki server URL")
+	flag.Parse()
+
 	if enablePrometheus {
 		promClient, promErr = prometheus.New(prometheusURL)
 		if promErr != nil {
@@ -69,14 +95,16 @@ func main() {
 		fmt.Println("Loki integration disabled")
 	}
 
-	flag.StringVar(&port, "port", getEnvOrDefault("SERVER_PORT", "8080"), "Server port")
-	flag.StringVar(&mode, "mode", getEnvOrDefault("SERVER_MODE", "stdio"), "Server mode: 'stdio', 'sse', or 'streamable-http'")
-	flag.BoolVar(&safeMod, "safe-mode", false, "Enable safe mode (disables write operations)")
-	flag.BoolVar(&enablePrometheus, "enable-prometheus", true, "Enable Prometheus integration (default: true)")
-	flag.BoolVar(&enableLoki, "enable-loki", true, "Enable Loki integration (default: true)")
-	flag.StringVar(&prometheusURL, "prometheus-url", getEnvOrDefault("PROMETHEUS_URL", "http://127.0.0.1:9090"), "Prometheus server URL")
-	flag.StringVar(&lokiURL, "loki-url", getEnvOrDefault("LOKI_URL", "http://127.0.0.1:3100"), "Loki server URL")
-	flag.Parse()
+	// 启动Informer并等待缓存同步
+	fmt.Println("Starting Informers...")
+	client.StartInformers(ctx)
+	fmt.Println("Waiting for Informer caches to sync...")
+	if !client.WaitForCacheSync(ctx) {
+		fmt.Println("Warning: Informer caches failed to sync")
+	} else {
+		fmt.Println("Informer caches synced successfully")
+	}
+
 	s.AddTool(tools.GetAPIResourcesTool(), handlers.GetAPIResources(client))
 	s.AddTool(tools.GetResourcesTool(), handlers.GetResources(client))
 	s.AddTool(tools.ListResourcesTool(), handlers.ListResources(client))
@@ -87,14 +115,14 @@ func main() {
 	s.AddTool(tools.GetEventsTools(), handlers.GetEvents(client))
 	s.AddTool(tools.GetIngressesTool(), handlers.GetIngresses(client))
 
-	if promClient != nil {
+	if promClient != nil && enablePrometheus {
 		s.AddTool(tools.GetMetricNamesTool(), handlers.GetMetricNames(promClient))
 		s.AddTool(tools.QueryInstantTool(), handlers.QueryInstant(promClient))
 		s.AddTool(tools.QueryRangeTool(), handlers.QueryRange(promClient))
 		s.AddTool(tools.GetAlertsTool(), handlers.GetAlerts(promClient))
 	}
 
-	if lokiClient != nil {
+	if lokiClient != nil && enableLoki {
 		s.AddTool(tools.QueryLogsInstantTool(), handlers.QueryLogsInstant(lokiClient))
 		s.AddTool(tools.QueryLogsRangeTool(), handlers.QueryLogsRange(lokiClient))
 		s.AddTool(tools.GetLogLabelsTool(), handlers.GetLogLabels(lokiClient))
@@ -127,6 +155,8 @@ func main() {
 			return
 		}
 		fmt.Printf("SSE server started on port %s\n", port)
+		// 等待上下文取消
+		<-ctx.Done()
 	case "streamable-http":
 		fmt.Printf("Starting server in streamable-http mode on port %s...\n", port)
 		streamableHTTP := server.NewStreamableHTTPServer(s, server.WithStateLess(true))
@@ -135,8 +165,12 @@ func main() {
 			return
 		}
 		fmt.Printf("Streamable-http server started on port %s (endpoint: http://localhost:%s/mcp)\n", port, port)
+		// 等待上下文取消
+		<-ctx.Done()
 	default:
 		fmt.Printf("Unknown server mode: %s. Use 'stdio', 'sse', or 'streamable-http'.\n", mode)
 		return
 	}
+
+	fmt.Println("Server shutdown completed")
 }

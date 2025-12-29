@@ -12,6 +12,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -19,8 +20,11 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/informers"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 	metricsclientset "k8s.io/metrics/pkg/client/clientset/versioned"
 	"sigs.k8s.io/yaml"
@@ -34,13 +38,18 @@ import (
 // - metrics：指标客户端，用于访问集群中资源的监控指标数据
 // 同时，加入可以缓存gvr资源的功能，减少对api server的调用次数
 type Client struct {
-	Clientset        *kubernetes.Clientset
-	dynamicClient    dynamic.Interface
-	discoveryClient  *discovery.DiscoveryClient
-	metricsClient    *metricsclientset.Clientset
-	restConfig       *rest.Config
-	apiResourceCache map[string]*schema.GroupVersionResource
-	cacheLock        sync.RWMutex
+	Clientset              *kubernetes.Clientset
+	dynamicClient          dynamic.Interface
+	discoveryClient        *discovery.DiscoveryClient
+	metricsClient          *metricsclientset.Clientset
+	restConfig             *rest.Config
+	informerFactory        informers.SharedInformerFactory
+	dynamicInformerFactory dynamicinformer.DynamicSharedInformerFactory
+	apiResourceCache       map[string]*schema.GroupVersionResource
+	resourceCaches         map[string]cache.Store
+	informerSynced         map[string]cache.InformerSynced
+	informerLock           sync.RWMutex
+	cacheLock              sync.RWMutex
 }
 
 // 构建客户端的 rest config,使用不同的方式：按次序分为：
@@ -105,6 +114,49 @@ func BuildRestConfig(kubeconfigPath string) (*rest.Config, error) {
 	return config, nil
 }
 
+// registerCommonResourceInformers 注册常用资源的Informer
+func (c *Client) autoRegisterAllInformers() error {
+	resourcesList, err := c.discoveryClient.ServerPreferredResources()
+	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
+		return fmt.Errorf("获取API资源失败: %w", err)
+	}
+
+	for _, resourceGroup := range resourcesList {
+		gv, err := schema.ParseGroupVersion(resourceGroup.GroupVersion)
+		if err != nil {
+			continue
+		}
+
+		for _, resource := range resourceGroup.APIResources {
+			gvr := schema.GroupVersionResource{
+				Group:    gv.Group,
+				Version:  gv.Version,
+				Resource: resource.Name,
+			}
+
+			if !c.supportsListVerb(resource.Verbs) {
+				continue
+			}
+
+			informer := c.dynamicInformerFactory.ForResource(gvr).Informer()
+			c.resourceCaches[resource.Kind] = informer.GetStore()
+			c.informerSynced[resource.Kind] = informer.HasSynced
+			c.apiResourceCache[resource.Kind] = &gvr
+		}
+	}
+
+	return nil
+}
+
+func (c *Client) supportsListVerb(verbs []string) bool {
+	for _, verb := range verbs {
+		if verb == "list" {
+			return true
+		}
+	}
+	return false
+}
+
 // 通过restconfig构建客户端
 func NewClient(kubeconfigPath string) (*Client, error) {
 	config, err := BuildRestConfig(kubeconfigPath)
@@ -127,16 +179,28 @@ func NewClient(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("构建metricsClient失败 %w", err)
 	}
-	return &Client{
-		Clientset:        clientset,
-		dynamicClient:    dynamicClient,
-		discoveryClient:  discoveryClient,
-		metricsClient:    metricsClient,
-		restConfig:       config,
-		apiResourceCache: make(map[string]*schema.GroupVersionResource),
-		cacheLock:        sync.RWMutex{},
-	}, nil
 
+	dynamicInformerFactory := dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 30*time.Second)
+
+	client := &Client{
+		Clientset:              clientset,
+		dynamicClient:          dynamicClient,
+		discoveryClient:        discoveryClient,
+		metricsClient:          metricsClient,
+		restConfig:             config,
+		dynamicInformerFactory: dynamicInformerFactory,
+		apiResourceCache:       make(map[string]*schema.GroupVersionResource),
+		resourceCaches:         make(map[string]cache.Store),
+		informerSynced:         make(map[string]cache.InformerSynced),
+		cacheLock:              sync.RWMutex{},
+		informerLock:           sync.RWMutex{},
+	}
+
+	if err := client.autoRegisterAllInformers(); err != nil {
+		return nil, fmt.Errorf("自动注册Informer失败: %w", err)
+	}
+
+	return client, nil
 }
 
 // 列出所有的在集群中的资源类型
@@ -167,6 +231,31 @@ func (c *Client) GetAPIResources(ctx context.Context, includeNamespaceScoped, in
 		}
 	}
 	return resources, nil
+}
+
+// StartInformers 启动所有注册的Informer
+func (c *Client) StartInformers(ctx context.Context) {
+
+	c.dynamicInformerFactory.Start(ctx.Done())
+}
+
+// WaitForCacheSync 等待所有Informer缓存同步完成
+func (c *Client) WaitForCacheSync(ctx context.Context) bool {
+	dynamicSynced := c.dynamicInformerFactory.WaitForCacheSync(ctx.Done())
+	for _, v := range dynamicSynced {
+		if !v {
+			return false
+		}
+	}
+	return true
+}
+
+// getResourceCacheKey 生成资源缓存的key，格式为 "kind/namespace/name" 或 "kind/name"（集群资源）
+func (c *Client) getResourceCacheKey(kind, namespace, name string) string {
+	if namespace != "" {
+		return fmt.Sprintf("%s/%s/%s", kind, namespace, name)
+	}
+	return fmt.Sprintf("%s/%s", kind, name)
 }
 
 // getCachedGVR 用来获取GVR ，通过输入kind的方式，如果catch中有就直接从中获取，如果没有就先写入在获取
@@ -206,11 +295,62 @@ func (c *Client) getCachedGVR(kind string) (*schema.GroupVersionResource, error)
 	return nil, fmt.Errorf("resource type %s not found", kind)
 }
 
+// getResourceFromCache 从本地缓存获取资源
+func (c *Client) getResourceFromCache(kind, namespace, name string) (map[string]interface{}, bool) {
+	cacheKey := c.getResourceCacheKey(kind, namespace, name)
+	c.informerLock.RLock()
+	defer c.informerLock.RUnlock()
+
+	if cache, exists := c.resourceCaches[kind]; exists {
+		if obj, exists, _ := cache.GetByKey(cacheKey); exists {
+			if unstructuredObj, ok := obj.(*unstructured.Unstructured); ok {
+				return unstructuredObj.UnstructuredContent(), true
+			}
+		}
+	}
+	return nil, false
+}
+
+// listResourcesFromCache 从本地缓存列出资源
+func (c *Client) listResourcesFromCache(kind, namespace, labelSelector, fieldSelector string) ([]map[string]interface{}, bool) {
+	c.informerLock.RLock()
+	defer c.informerLock.RUnlock()
+
+	if cache, exists := c.resourceCaches[kind]; exists {
+		items := cache.List()
+		var result []map[string]interface{}
+		for _, item := range items {
+			if metaObj, ok := item.(metav1.Object); ok {
+				if namespace != "" && metaObj.GetNamespace() != namespace {
+					continue
+				}
+				if labelSelector != "" || fieldSelector != "" {
+					return nil, false
+				}
+				result = append(result, map[string]interface{}{
+					"name":      metaObj.GetName(),
+					"kind":      kind,
+					"namespace": metaObj.GetNamespace(),
+					"lables":    metaObj.GetLabels(),
+				})
+			}
+		}
+		return result, true
+	}
+	return nil, false
+}
+
 // GetResource retrieves detailed information about a specific resource.
 // It uses the dynamic client to fetch the resource by kind, name, and namespace.
 // It utilizes a cached GroupVersionResource (GVR) for efficiency.
 // Returns the unstructured content of the resource as a map, or an error.
 func (c *Client) GetResource(ctx context.Context, kind, name, namespace string) (map[string]interface{}, error) {
+	// 首先尝试从本地缓存获取
+	if resource, found := c.getResourceFromCache(kind, namespace, name); found {
+		return resource, nil
+	}
+
+	// 缓存未命中，调用API Server
 	gvr, err := c.getCachedGVR(kind)
 	if err != nil {
 		return nil, err
@@ -229,6 +369,12 @@ func (c *Client) GetResource(ctx context.Context, kind, name, namespace string) 
 }
 
 func (c *Client) ListResources(ctx context.Context, kind, namespace, labelSelector, fieldSelector string) ([]map[string]interface{}, error) {
+	// 首先尝试从本地缓存获取
+	if resources, found := c.listResourcesFromCache(kind, namespace, labelSelector, fieldSelector); found {
+		return resources, nil
+	}
+
+	// 缓存未命中或有复杂选择器，调用API Server
 	gvr, err := c.getCachedGVR(kind)
 	if err != nil {
 		return nil, err
@@ -422,6 +568,12 @@ func (c *Client) DeleteResource(ctx context.Context, kind, name, namespace strin
 // 返回资源的unstructured content通过map[string]interface{}返回
 // 其实和getresource一样
 func (c *Client) DescribeResource(ctx context.Context, kind, name, namespace string) (map[string]interface{}, error) {
+	// 首先尝试从本地缓存获取
+	if resource, found := c.getResourceFromCache(kind, namespace, name); found {
+		return resource, nil
+	}
+
+	// 缓存未命中，调用API Server
 	gvr, err := c.getCachedGVR(kind)
 	if err != nil {
 		return nil, err
@@ -562,6 +714,43 @@ func (c *Client) GetNodeMetrics(ctx context.Context, nodeName string) (map[strin
 }
 
 func (c *Client) GetEvents(ctx context.Context, namespace, labelSelector string) ([]map[string]interface{}, error) {
+	// 首先尝试从本地缓存获取
+	c.informerLock.RLock()
+	if eventCache, exists := c.resourceCaches["Event"]; exists {
+		items := eventCache.List()
+		var events []map[string]interface{}
+		for _, item := range items {
+			if event, ok := item.(*corev1.Event); ok {
+				// 检查命名空间
+				if namespace != "" && event.Namespace != namespace {
+					continue
+				}
+				// 检查标签选择器（简化实现）
+				if labelSelector != "" {
+					// 复杂的标签选择器仍需要调用API Server
+					c.informerLock.RUnlock()
+					goto callAPIServer
+				}
+				events = append(events, map[string]interface{}{
+					"name":      event.Name,
+					"namespace": event.Namespace,
+					"reason":    event.Reason,
+					"message":   event.Message,
+					"source":    event.Source.Component,
+					"type":      event.Type,
+					"count":     event.Count,
+					"firstTime": event.FirstTimestamp.Time,
+					"lastTime":  event.LastTimestamp.Time,
+				})
+			}
+		}
+		c.informerLock.RUnlock()
+		return events, nil
+	}
+	c.informerLock.RUnlock()
+
+callAPIServer:
+	// 缓存未命中或有复杂选择器，调用API Server
 	var eventList *corev1.EventList
 	var err error
 	var options metav1.ListOptions
@@ -622,7 +811,53 @@ func (c *Client) GetIngresses(ctx context.Context, host string) ([]map[string]in
 		PortName    string `json:"portName"`
 		PortNum     int32  `json:"portNum"`
 	}
-	//列出集群中所有的ingress
+
+	// 首先尝试从本地缓存获取
+	c.informerLock.RLock()
+	if ingressCache, exists := c.resourceCaches["Ingress"]; exists {
+		items := ingressCache.List()
+		var ingressList []map[string]interface{}
+		for _, item := range items {
+			if ingress, ok := item.(*networkingv1.Ingress); ok {
+				hasMatchingHost := false
+				var pathInfos []IngressPathInfo
+				for _, rule := range ingress.Spec.Rules {
+					// 检查主机匹配
+					if host != "" && rule.Host != host {
+						continue
+					}
+					if host == "" || rule.Host == host {
+						hasMatchingHost = true
+						if rule.HTTP != nil {
+							for _, path := range rule.HTTP.Paths {
+								if path.Backend.Service != nil {
+									pathInfos = append(pathInfos, IngressPathInfo{
+										Host:        rule.Host,
+										Path:        path.Path,
+										ServiceName: path.Backend.Service.Name,
+										PortName:    path.Backend.Service.Port.Name,
+										PortNum:     path.Backend.Service.Port.Number,
+									})
+								}
+							}
+						}
+					}
+				}
+				if hasMatchingHost {
+					ingressList = append(ingressList, map[string]interface{}{
+						"name":            ingress.Name,
+						"namespace":       ingress.Namespace,
+						"IngressPathInfo": pathInfos,
+					})
+				}
+			}
+		}
+		c.informerLock.RUnlock()
+		return ingressList, nil
+	}
+	c.informerLock.RUnlock()
+
+	// 缓存未命中，调用API Server
 	ingresses, err := c.Clientset.NetworkingV1().Ingresses("").List(ctx, metav1.ListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to retrieve ingresses:%w", err)
