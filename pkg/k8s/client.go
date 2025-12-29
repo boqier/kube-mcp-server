@@ -16,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/discovery"
@@ -116,6 +117,7 @@ func BuildRestConfig(kubeconfigPath string) (*rest.Config, error) {
 
 // registerCommonResourceInformers 注册常用资源的Informer
 func (c *Client) autoRegisterAllInformers() error {
+	// 1. 通过 Discovery Client 获取集群所有资源
 	resourcesList, err := c.discoveryClient.ServerPreferredResources()
 	if err != nil && !discovery.IsGroupDiscoveryFailedError(err) {
 		return fmt.Errorf("获取API资源失败: %w", err)
@@ -134,7 +136,7 @@ func (c *Client) autoRegisterAllInformers() error {
 				Resource: resource.Name,
 			}
 
-			if !c.supportsListVerb(resource.Verbs) {
+			if !c.supportsListAndWatchVerbs(resource.Verbs) {
 				continue
 			}
 
@@ -148,13 +150,18 @@ func (c *Client) autoRegisterAllInformers() error {
 	return nil
 }
 
-func (c *Client) supportsListVerb(verbs []string) bool {
+func (c *Client) supportsListAndWatchVerbs(verbs []string) bool {
+	hasList := false
+	hasWatch := false
 	for _, verb := range verbs {
 		if verb == "list" {
-			return true
+			hasList = true
+		}
+		if verb == "watch" {
+			hasWatch = true
 		}
 	}
-	return false
+	return hasList && hasWatch
 }
 
 // 通过restconfig构建客户端
@@ -818,38 +825,53 @@ func (c *Client) GetIngresses(ctx context.Context, host string) ([]map[string]in
 		items := ingressCache.List()
 		var ingressList []map[string]interface{}
 		for _, item := range items {
-			if ingress, ok := item.(*networkingv1.Ingress); ok {
-				hasMatchingHost := false
-				var pathInfos []IngressPathInfo
-				for _, rule := range ingress.Spec.Rules {
-					// 检查主机匹配
-					if host != "" && rule.Host != host {
-						continue
-					}
-					if host == "" || rule.Host == host {
-						hasMatchingHost = true
-						if rule.HTTP != nil {
-							for _, path := range rule.HTTP.Paths {
-								if path.Backend.Service != nil {
-									pathInfos = append(pathInfos, IngressPathInfo{
-										Host:        rule.Host,
-										Path:        path.Path,
-										ServiceName: path.Backend.Service.Name,
-										PortName:    path.Backend.Service.Port.Name,
-										PortNum:     path.Backend.Service.Port.Number,
-									})
-								}
+			var ingress *networkingv1.Ingress
+
+			if unstructuredObj, ok := item.(*unstructured.Unstructured); ok {
+				ingress = &networkingv1.Ingress{}
+				if err := runtime.DefaultUnstructuredConverter.FromUnstructured(unstructuredObj.UnstructuredContent(), ingress); err != nil {
+					continue
+				}
+			} else if typedIngress, ok := item.(*networkingv1.Ingress); ok {
+				ingress = typedIngress
+			} else {
+				continue
+			}
+
+			hasMatchingHost := false
+			var pathInfos []IngressPathInfo
+
+			if len(ingress.Spec.Rules) == 0 {
+				hasMatchingHost = true
+			}
+
+			for _, rule := range ingress.Spec.Rules {
+				if host != "" && rule.Host != host {
+					continue
+				}
+				if host == "" || rule.Host == host {
+					hasMatchingHost = true
+					if rule.HTTP != nil {
+						for _, path := range rule.HTTP.Paths {
+							if path.Backend.Service != nil {
+								pathInfos = append(pathInfos, IngressPathInfo{
+									Host:        rule.Host,
+									Path:        path.Path,
+									ServiceName: path.Backend.Service.Name,
+									PortName:    path.Backend.Service.Port.Name,
+									PortNum:     path.Backend.Service.Port.Number,
+								})
 							}
 						}
 					}
 				}
-				if hasMatchingHost {
-					ingressList = append(ingressList, map[string]interface{}{
-						"name":            ingress.Name,
-						"namespace":       ingress.Namespace,
-						"IngressPathInfo": pathInfos,
-					})
-				}
+			}
+			if hasMatchingHost {
+				ingressList = append(ingressList, map[string]interface{}{
+					"name":            ingress.Name,
+					"namespace":       ingress.Namespace,
+					"IngressPathInfo": pathInfos,
+				})
 			}
 		}
 		c.informerLock.RUnlock()
@@ -867,12 +889,15 @@ func (c *Client) GetIngresses(ctx context.Context, host string) ([]map[string]in
 	for _, ingress := range ingresses.Items {
 		hasMatchingHost := false
 		var pathInfos []IngressPathInfo
+
+		if len(ingress.Spec.Rules) == 0 {
+			hasMatchingHost = true
+		}
+
 		for _, rule := range ingress.Spec.Rules {
-			//没有匹配到对应的ingress，继续找
 			if host != "" && rule.Host != host {
 				continue
 			}
-			// 如果匹配到了，或者说要列出所有的：
 			if host == "" || rule.Host == host {
 				hasMatchingHost = true
 				if rule.HTTP != nil {
